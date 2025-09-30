@@ -41,7 +41,6 @@ function getScrollParent(el) {
   return null;
 }
 
-// Center a child inside a scroll container smoothly
 function scrollChildIntoViewCenter(scroller, child) {
   if (!scroller || !child) return;
   const cRect = scroller.getBoundingClientRect();
@@ -53,7 +52,6 @@ function scrollChildIntoViewCenter(scroller, child) {
 // =================== INIT ===================
 window.addEventListener("load", () => { init().catch(console.error); });
 
-// Add this init at the bottom (or top, before use)
 async function init() {
   try {
     const credentials = await fetchCredentials();
@@ -72,7 +70,6 @@ async function init() {
     startProgressAnimation();
   } catch (e) {
     console.error("Init failed:", e);
-    // Optional: show an on-screen error for kiosk debugging
     trackName.textContent = "Init failed";
     artistName.textContent = e?.message || "See console";
   }
@@ -80,7 +77,7 @@ async function init() {
 
 // =================== TOKEN ===================
 async function fetchCredentials() {
-  const r = await fetch("/credentials.json"); // absolute path safer
+  const r = await fetch("/credentials.json");
   if (!r.ok) throw new Error(`credentials.json ${r.status}`);
   return r.json();
 }
