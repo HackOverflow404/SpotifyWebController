@@ -1,8 +1,5 @@
 // =================== CONFIG ===================
-const credentials = await fetchCredentials();
-const CLIENT_ID = credentials.CLIENT_ID;
-const CLIENT_SECRET = credentials.CLIENT_SECRET;
-const REFRESH_TOKEN = credentials.REFRESH_TOKEN;
+let CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN;
 let rafId = null;
 
 // =================== STATE ===================
@@ -54,24 +51,38 @@ function scrollChildIntoViewCenter(scroller, child) {
 }
 
 // =================== INIT ===================
-window.addEventListener("load", async () => {
-  setupEventListeners();
-  setupMediaSession();
-  await refreshAccessToken();
-  await updateNowPlaying();
+window.addEventListener("load", () => { init().catch(console.error); });
 
-  if (pollInterval) clearInterval(pollInterval);
-  pollInterval = setInterval(updateNowPlaying, 5000);
+// Add this init at the bottom (or top, before use)
+async function init() {
+  try {
+    const credentials = await fetchCredentials();
+    CLIENT_ID = credentials.CLIENT_ID;
+    CLIENT_SECRET = credentials.CLIENT_SECRET;
+    REFRESH_TOKEN = credentials.REFRESH_TOKEN;
 
-  startProgressAnimation();
-});
+    setupEventListeners();
+    setupMediaSession();
+    await refreshAccessToken();
+    await updateNowPlaying();
+
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(updateNowPlaying, 5000);
+
+    startProgressAnimation();
+  } catch (e) {
+    console.error("Init failed:", e);
+    // Optional: show an on-screen error for kiosk debugging
+    trackName.textContent = "Init failed";
+    artistName.textContent = e?.message || "See console";
+  }
+}
 
 // =================== TOKEN ===================
 async function fetchCredentials() {
-  const response = await fetch('./credentials.json');
-  const credentials = await response.json();
-  console.log(credentials);
-  return credentials;
+  const r = await fetch("/credentials.json"); // absolute path safer
+  if (!r.ok) throw new Error(`credentials.json ${r.status}`);
+  return r.json();
 }
 
 async function refreshAccessToken() {
