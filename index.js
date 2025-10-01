@@ -116,28 +116,29 @@ async function ensureAccessToken() {
 }
 
 // =================== PROGRESS TICKER ===================
+let lastTimeLabel = 0;
 function startProgressAnimation() {
   if (rafId) cancelAnimationFrame(rafId);
   let last = performance.now();
 
   const tick = (now) => {
-    const dt = now - last;
-    last = now;
+    const dt = now - last; last = now;
 
     if (isPlaying && currentDurationMs > 0) {
       currentProgressMs = Math.min(currentDurationMs, currentProgressMs + dt);
-
       const pct = currentDurationMs ? currentProgressMs / currentDurationMs : 0;
-      progressFill.style.transform = `scaleX(${Math.min(
-        1,
-        Math.max(0.0001, pct)
-      )})`;
-      currentTime.textContent = formatTime(currentProgressMs);
+      progressFill.style.transform = `scaleX(${Math.min(1, Math.max(0.0001, pct))})`;
+
+      // Update time label at ~4 fps to reduce layout
+      if (now - lastTimeLabel > 250) {
+        currentTime.textContent = formatTime(currentProgressMs);
+        lastTimeLabel = now;
+      }
+
       updateLyricsHighlight(currentProgressMs);
     }
     rafId = requestAnimationFrame(tick);
   };
-
   rafId = requestAnimationFrame(tick);
 }
 
@@ -301,10 +302,18 @@ function updateUI(data) {
 // =================== LYRICS ===================
 let lrcLines = [];
 let currentLyricIdx = -1;
+let lyricEls = [];
+let lyricOffsets = [];
+let lyricsScroller = null;
+let lastLyricPaint = 0;
 
 async function fetchLyrics(trackTitle, artist) {
   lrcLines = [];
   currentLyricIdx = -1;
+  lyricEls = [];
+  lyricOffsets = [];
+  lyricsScroller = null;
+  lastLyricPaint = 0;
   lyricsContent.textContent = "Loading lyrics...";
 
   try {
@@ -396,43 +405,59 @@ function parseLRC(lrc) {
 function renderSyncedLyrics(lines) {
   lyricsContent.innerHTML = "";
   const frag = document.createDocumentFragment();
-  for (const row of lines) {
+  lyricEls = new Array(lines.length);
+  for (let i = 0; i < lines.length; i++) {
     const d = document.createElement("div");
     d.className = "lyric-line";
-    d.dataset.t = String(row.t);
-    d.textContent = row.text;
+    d.dataset.t = String(lines[i].t);
+    d.textContent = lines[i].text;
     frag.appendChild(d);
+    lyricEls[i] = d;
   }
   lyricsContent.appendChild(frag);
+
+  // Cache scroller once
+  lyricsScroller = document.querySelector(".lyrics-container");
+
+  // Precompute vertical positions in the next frame (after layout)
+  requestAnimationFrame(() => {
+    lyricOffsets = lyricEls.map((el) => el.offsetTop);
+  });
 }
 
 function updateLyricsHighlight(nowMs) {
   if (!lrcLines.length) return;
 
-  let lo = 0,
-    hi = lrcLines.length - 1,
-    idx = -1;
+  // 12 fps throttle to reduce work on Pi
+  const now = performance.now();
+  if (now - lastLyricPaint < 83) return; // ~12fps
+  lastLyricPaint = now;
+
+  // Binary search stays
+  let lo = 0, hi = lrcLines.length - 1, idx = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    if (lrcLines[mid].t <= nowMs) {
-      idx = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
+    if (lrcLines[mid].t <= nowMs) { idx = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
   }
   if (idx === -1 || idx === currentLyricIdx) return;
-  currentLyricIdx = idx;
 
-  const lines = lyricsContent.querySelectorAll(".lyric-line");
-  lines.forEach((el) => el.classList.remove("active"));
-  const activeEl = lines[idx];
+  // Toggle only the two lines
+  if (currentLyricIdx >= 0 && lyricEls[currentLyricIdx]) {
+    lyricEls[currentLyricIdx].classList.remove("active");
+  }
+  currentLyricIdx = idx;
+  const activeEl = lyricEls[idx];
   if (!activeEl) return;
   activeEl.classList.add("active");
 
-  const scroller =
-    getScrollParent(activeEl) || document.querySelector(".lyrics-container");
-  scrollChildIntoViewCenter(scroller, activeEl);
+  // Center the active line using precomputed offsets (no rect reads)
+  if (lyricsScroller && lyricOffsets.length === lyricEls.length) {
+    const targetTop = lyricOffsets[idx];
+    const center = targetTop - (lyricsScroller.clientHeight - activeEl.offsetHeight) / 2;
+    // Smooth but cheap: tween scrollTop a little per frame (no CSS smooth)
+    lyricsScroller.scrollTop += Math.round((center - lyricsScroller.scrollTop) * 0.35);
+  }
 }
 
 // =================== CONTROLS ===================
